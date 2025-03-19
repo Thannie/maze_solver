@@ -1,50 +1,42 @@
 import pygame
 import sys, time
-from maze_solver import AlwaysRightSolver, DFSSolver, AStarSolver, MultiAgentSolver
+from maze_solver import GridAStarSolver, GridDFSSolver
 from button import Button
 
 
 class MazeDisplay:
     """
-    Displays the maze on the left and a side panel with buttons on the right.
-    
-    New buttons added:
-      - "Always Right", "DFS", "A*", "Multi-Agent": to select the solver.
-      - "Solve Maze": to manually solve (if auto-solve is off).
-      - "Generate Maze": to generate a new maze.
-      - "Auto Solve": to toggle automatic solving on updates.
-      
-    The display also shows the time taken to solve the maze.
-    Left-click in the maze sets the start cell (green) and right-click sets the end (red).
+    Displays the maze (now a 2D grid) on the left and a side panel with buttons on the right.
+    In the grid, 0 is a wall and 1 is a path.
+    You can change the start (green) and end (red) points by clicking in the maze.
     """
-    def __init__(self, maze_generator, maze_width, maze_height, panel_width=200,
-                 bg_top_color=(30, 30, 30), bg_bottom_color=(0, 0, 0)):
-        self.maze_generator = maze_generator
-        self.maze_width = maze_width       # Maze drawing area width.
-        self.maze_height = maze_height     # Maze drawing area height.
-        self.panel_width = panel_width     # Side panel width.
-        self.width = maze_width + panel_width
-        self.height = maze_height
-        self.bg_top_color = bg_top_color
-        self.bg_bottom_color = bg_bottom_color
+    def __init__(self, maze_generator, cell_size, panel_width=200,
+                 wall_color=(0, 0, 0), path_color=(255, 255, 255)):
+        self.maze_generator = maze_generator  # uses new grid-based maze
+        self.cell_size = cell_size
+        self.wall_color = wall_color
+        self.path_color = path_color
+        self.panel_width = panel_width
+        self.maze_width = maze_generator.full_cols * cell_size
+        self.maze_height = maze_generator.full_rows * cell_size
+        self.width = self.maze_width + panel_width
+        self.height = self.maze_height
         self.running = True
         self.solution = None
         self.no_solution = False
-        self.solver_mode = 'dfs'  # Default solver mode.
-        self.auto_solve = False   # Auto-solve toggle.
-        self.changed = False      # Flag to indicate a change that requires re-solving.
-        self.solve_time = None    # To store the time (in ms) to solve the maze.
-        # Default start and end cells.
-        self.start_cell = self.maze_generator.grid[0][0]
-        self.end_cell = self.maze_generator.grid[self.maze_generator.rows - 1][self.maze_generator.cols - 1]
+        self.solver_mode = 'dfs'  # "dfs" or "astar"
+        self.auto_solve = False
+        self.changed = False
+        self.solve_time = None
+        # Start and end are stored as (row, col) in grid coordinates.
+        self.start_cell = (1, 1)
+        self.end_cell = (maze_generator.full_rows - 2, maze_generator.full_cols - 2)
 
         pygame.init()
         self.screen = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption("Maze Generator & Solver")
+        pygame.display.set_caption("Maze Generator & Solver (Grid)")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("Arial", 24)
-
-        # Create buttons for the side panel.
         self.buttons = []
         self.create_buttons()
 
@@ -89,10 +81,9 @@ class MazeDisplay:
         y += button_height + gap
 
     def generate_new_maze(self):
-        # Regenerate the maze using the MazeGenerator's DFS algorithm.
-        self.maze_generator.generate_maze(0, 0)
-        self.start_cell = self.maze_generator.grid[0][0]
-        self.end_cell = self.maze_generator.grid[self.maze_generator.rows - 1][self.maze_generator.cols - 1]
+        self.maze_generator.generate_maze()
+        self.start_cell = (1, 1)
+        self.end_cell = (self.maze_generator.full_rows - 2, self.maze_generator.full_cols - 2)
         self.solution = None
         self.no_solution = False
         self.changed = True
@@ -102,23 +93,26 @@ class MazeDisplay:
         self.auto_solve_button.text = "Auto Solve: ON" if self.auto_solve else "Auto Solve: OFF"
         self.changed = True
 
+    def toggle_auto_solve(self):
+        self.auto_solve = not self.auto_solve
+        self.auto_solve_button.text = "Auto Solve: ON" if self.auto_solve else "Auto Solve: OFF"
+        self.changed = True
+
     def solve_maze(self):
-        # Record the time taken to solve the maze.
+        start = self.start_cell
+        end = self.end_cell
         start_time = time.time_ns()
-        if self.solver_mode == 'always_right':
-            solver = AlwaysRightSolver(self.maze_generator)
-            sol = solver.solve(self.start_cell, self.end_cell)
-        elif self.solver_mode == 'dfs':
-            solver = DFSSolver(self.maze_generator)
-            sol = solver.solve(start=self.start_cell, end=self.end_cell)
+        if self.solver_mode == 'dfs':
+            solver = GridDFSSolver(self.maze_generator.grid)
+            sol = solver.solve(start, end)
         elif self.solver_mode == 'astar':
-            solver = AStarSolver(self.maze_generator)
-            sol = solver.solve(start=self.start_cell, end=self.end_cell)
-        elif self.solver_mode == 'multi_agent':
-            solver = MultiAgentSolver(self.maze_generator)
-            sol = solver.solve()
+            solver = GridAStarSolver(self.maze_generator.grid)
+            sol = solver.solve(start, end)
+        else:
+            solver = GridDFSSolver(self.maze_generator.grid)
+            sol = solver.solve(start, end)
         end_time = time.time_ns()
-        self.solve_time = (end_time - start_time) / 1_000_000  # Solve time in milliseconds.
+        self.solve_time = (end_time - start_time) / 1_000_00  # in milliseconds
         if sol:
             self.solution = sol
             self.no_solution = False
@@ -140,29 +134,32 @@ class MazeDisplay:
         pygame.draw.rect(self.screen, panel_color, panel_rect)
 
     def draw_start_end(self):
-        cell_size = self.start_cell.cell_size
-        start_rect = pygame.Rect(self.start_cell.col * cell_size, self.start_cell.row * cell_size, cell_size, cell_size)
+        sr, sc = self.start_cell
+        er, ec = self.end_cell
+        start_rect = pygame.Rect(sc * self.cell_size, sr * self.cell_size, self.cell_size, self.cell_size)
         pygame.draw.rect(self.screen, (0, 255, 0), start_rect)
-        end_rect = pygame.Rect(self.end_cell.col * cell_size, self.end_cell.row * cell_size, cell_size, cell_size)
+        end_rect = pygame.Rect(ec * self.cell_size, er * self.cell_size, self.cell_size, self.cell_size)
         pygame.draw.rect(self.screen, (255, 0, 0), end_rect)
 
     def draw_maze(self):
-        for row in self.maze_generator.grid:
-            for cell in row:
-                cell.draw(self.screen)
+        for i, row in enumerate(self.maze_generator.grid):
+            for j, cell in enumerate(row):
+                color = self.path_color if cell == 1 else self.wall_color
+                rect = pygame.Rect(j * self.cell_size, i * self.cell_size, self.cell_size, self.cell_size)
+                pygame.draw.rect(self.screen, color, rect)
 
     def draw_solution(self):
         if self.solution:
             points = []
-            for cell in self.solution:
-                x = cell.col * cell.cell_size + cell.cell_size // 2
-                y = cell.row * cell.cell_size + cell.cell_size // 2
+            for r, c in self.solution:
+                x = c * self.cell_size + self.cell_size // 2
+                y = r * self.cell_size + self.cell_size // 2
                 points.append((x, y))
             if len(points) > 1:
                 pygame.draw.lines(self.screen, (0, 0, 255), False, points, 4)
         elif self.no_solution:
             text = self.font.render("No solution found", True, (255, 255, 255))
-            text_rect = text.get_rect(center=(self.maze_width // 2, self.height // 2))
+            text_rect = text.get_rect(center=(self.maze_width // 2, self.maze_height // 2))
             self.screen.blit(text, text_rect)
 
     def draw_buttons(self):
@@ -189,31 +186,26 @@ class MazeDisplay:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-                # Let buttons handle events.
                 for button in self.buttons:
                     button.handle_event(event)
-                # Allow setting start/end if clicking in the maze area.
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.pos[0] < self.maze_width:  # Only process clicks in the maze area.
+                    if event.pos[0] < self.maze_width:
                         x, y = event.pos
-                        col = x // self.maze_generator.cell_size
-                        row = y // self.maze_generator.cell_size
-                        clicked_cell = self.maze_generator.get_cell(row, col)
-                        if clicked_cell:
-                            if event.button == 1:  # Left-click sets start.
-                                self.start_cell = clicked_cell
-                            elif event.button == 3:  # Right-click sets end.
-                                self.end_cell = clicked_cell
+                        col = x // self.cell_size
+                        row = y // self.cell_size
+                        # Only allow changing start/end on a path cell.
+                        if self.maze_generator.grid[row][col] == 1:
+                            if event.button == 1:
+                                self.start_cell = (row, col)
+                            elif event.button == 3:
+                                self.end_cell = (row, col)
                             self.solution = None
                             self.no_solution = False
                             self.changed = True
-
-            # Auto-solve if toggled and a change occurred.
             if self.auto_solve and self.changed:
                 self.solve_maze()
                 self.changed = False
-
-            self.draw_gradient_background()
+            self.screen.fill((0, 0, 0))
             self.draw_maze()
             self.draw_start_end()
             self.draw_solution()
@@ -221,7 +213,6 @@ class MazeDisplay:
             self.draw_solve_time()
             pygame.display.flip()
             self.clock.tick(60)
-
         pygame.quit()
         sys.exit()
         

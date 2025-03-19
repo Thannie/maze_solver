@@ -4,135 +4,58 @@ Code responsible for generating a maze.
 
 
 from maze_cel import MazeCell
-import random
-
+import random        
 
 class MazeGenerator:
     """
-    Implements maze generation using a randomized depth-first search algorithm.
+        Generates a maze using DFS on a grid where walls occupy cells.
+        The maze is represented as a 2D array where:
+        0 represents a wall,
+        1 represents a path.
+        The grid dimensions are (2*rows + 1) x (2*cols + 1).
     """
-    def __init__(self, rows, cols, cell_size):
-        """
-        Initializes the maze grid and stack for the DFS algorithm.
-        
-        Parameters:
-            rows (int): Number of rows in the maze.
-            cols (int): Number of columns in the maze.
-            cell_size (int): Size of each cell in pixels.
-        """
-        self.rows = rows
-        self.cols = cols
-        self.cell_size = cell_size
-        # Create a grid (2D list) of MazeCell objects.
-        self.grid = [[MazeCell(r, c, cell_size) for c in range(cols)] for r in range(rows)]
-        # Stack to hold the path for backtracking.
-        self.stack = []
+    def __init__(self, rows, cols):
+        self.maze_rows = rows   # number of "cell" rows
+        self.maze_cols = cols   # number of "cell" columns
+        self.full_rows = 2 * rows + 1
+        self.full_cols = 2 * cols + 1
+        self.grid = [[0 for _ in range(self.full_cols)] for _ in range(self.full_rows)]
+    
+    def generate_maze(self):
 
-    def get_cell(self, row, col):
         """
-        Retrieves the cell at the specified row and column.
-        
-        Returns:
-            MazeCell if the indices are valid, otherwise None.
-        """
-        if 0 <= row < self.rows and 0 <= col < self.cols:
-            return self.grid[row][col]
-        return None
-
-    def get_unvisited_neighbors(self, cell):
-        """
-        Returns a list of unvisited neighboring cells along with the direction from the current cell.
-        
-        The directions are: 'top', 'right', 'bottom', 'left'.
-        
-        Parameters:
-            cell (MazeCell): The current cell.
+            Generates the maze using a randomized DFS algorithm.
             
-        Returns:
-            List of tuples (neighbor_cell, direction).
+            The algorithm starts at the given cell, marks it as visited, and then:
+                1. Chooses a random unvisited neighbor.
+                2. Removes the wall between the current cell and the neighbor.
+                3. Moves to the neighbor and marks it as visited.
+                4. If a cell has no unvisited neighbors, it backtracks using the stack.
         """
-        neighbors = []
-        row, col = cell.row, cell.col
+         # Reset the grid to all walls.
+        self.grid = [[0 for _ in range(self.full_cols)] for _ in range(self.full_rows)]
 
-        # Top neighbor
-        neighbor = self.get_cell(row - 1, col)
-        if neighbor and not neighbor.visited:
-            neighbors.append((neighbor, 'top'))
-        # Right neighbor
-        neighbor = self.get_cell(row, col + 1)
-        if neighbor and not neighbor.visited:
-            neighbors.append((neighbor, 'right'))
-        # Bottom neighbor
-        neighbor = self.get_cell(row + 1, col)
-        if neighbor and not neighbor.visited:
-            neighbors.append((neighbor, 'bottom'))
-        # Left neighbor
-        neighbor = self.get_cell(row, col - 1)
-        if neighbor and not neighbor.visited:
-            neighbors.append((neighbor, 'left'))
-
-        return neighbors
-
-    def remove_walls(self, current, neighbor, direction):
-        """
-        Removes the wall between the current cell and the neighbor in the given direction.
         
-        Parameters:
-            current (MazeCell): The current cell.
-            neighbor (MazeCell): The neighboring cell.
-            direction (str): The direction from current to neighbor ('top', 'right', 'bottom', or 'left').
-        """
-        if direction == 'top':
-            current.walls['top'] = False
-            neighbor.walls['bottom'] = False
-        elif direction == 'right':
-            current.walls['right'] = False
-            neighbor.walls['left'] = False
-        elif direction == 'bottom':
-            current.walls['bottom'] = False
-            neighbor.walls['top'] = False
-        elif direction == 'left':
-            current.walls['left'] = False
-            neighbor.walls['right'] = False
-
-    def generate_maze(self, start_row=0, start_col=0):
-        """
-        Generates the maze using a randomized DFS algorithm.
+        # Start at (1,1) (the first cell in the maze)
+        start_r, start_c = 1, 1
+        self.grid[start_r][start_c] = 1
+        stack = [(start_r, start_c)]
         
-        The algorithm starts at the given cell, marks it as visited, and then:
-            1. Chooses a random unvisited neighbor.
-            2. Removes the wall between the current cell and the neighbor.
-            3. Moves to the neighbor and marks it as visited.
-            4. If a cell has no unvisited neighbors, it backtracks using the stack.
-        
-        Parameters:
-            start_row (int): The starting cell's row index.
-            start_col (int): The starting cell's column index.
-        """
-
-        # Reset each cell's visited status and restore all walls.
-        for row in self.grid:
-            for cell in row:
-                cell.visited = False
-                cell.walls = {'top': True, 'right': True, 'bottom': True, 'left': True}
-        # Clear the stack.
-        self.stack = []
-
-
-        current = self.get_cell(start_row, start_col)
-        current.visited = True
-        self.stack.append(current)
-
-        while self.stack:
-            current = self.stack[-1]
-            neighbors = self.get_unvisited_neighbors(current)
+        while stack:
+            r, c = stack[-1]
+            neighbors = []
+            # Check in four directions, stepping two cells away.
+            directions = [(-2, 0), (2, 0), (0, -2), (0, 2)]
+            for dr, dc in directions:
+                nr, nc = r + dr, c + dc
+                if 1 <= nr < self.full_rows-1 and 1 <= nc < self.full_cols-1:
+                    if self.grid[nr][nc] == 0:
+                        neighbors.append((nr, nc, dr, dc))
             if neighbors:
-                # Choose a random unvisited neighbor
-                neighbor, direction = random.choice(neighbors)
-                # Remove the wall between the current cell and the neighbor
-                self.remove_walls(current, neighbor, direction)
-                neighbor.visited = True
-                self.stack.append(neighbor)
+                nr, nc, dr, dc = random.choice(neighbors)
+                # Remove the wall between current cell and chosen neighbor.
+                self.grid[r + dr//2][c + dc//2] = 1
+                self.grid[nr][nc] = 1
+                stack.append((nr, nc))
             else:
-                # Backtrack if no unvisited neighbors are available
-                self.stack.pop()
+                stack.pop()
